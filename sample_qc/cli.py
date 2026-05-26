@@ -1,8 +1,4 @@
-"""
-cli.py — Click CLI commands for Sample QC pipeline.
-"""
-
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import sys
@@ -12,7 +8,7 @@ import click
 from rich.console import Console
 
 from sample_qc import __version__
-from sample_qc.metrics import run_all_metrics, generate_qc_metrics
+from sample_qc.metrics import generate_qc_metrics, run_all_metrics
 from sample_qc.parser import load_proteomics_data
 from sample_qc.report import generate_report
 
@@ -21,11 +17,7 @@ console = Console()
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 def main() -> None:
-    """🧬 Sample QC: Quality control metrics and reporting for genomic and proteomic samples.
-
-    Calculate metrics, flag outliers, detect duplicates, and generate HTML, JSON,
-    or Plain Text reports easily from your genomic sample sheets or proteomic abundance matrices.
-    """
+    """🧬 Sample QC: Quality control metrics and reporting for proteomics datasets."""
     pass
 
 
@@ -53,7 +45,7 @@ def main() -> None:
     "-i",
     "--input-format",
     "input_format",
-    type=click.Choice(["fragpipe", "spectronaut", "genomics", "auto"]),
+    type=click.Choice(["fragpipe", "spectronaut", "auto"]),
     default="auto",
     help="Input dataset format type.",
 )
@@ -68,13 +60,13 @@ def main() -> None:
     "--n-ms2",
     type=int,
     default=None,
-    help="Number of MS2 spectra for ID rate calculation.",
+    help="Number of MS2 spectra for FragPipe ID-rate calculation.",
 )
 @click.option(
     "--tic-area",
     type=float,
     default=None,
-    help="Total Ion Chromatogram (TIC) area for explained intensity calculation.",
+    help="Total Ion Chromatogram (TIC) area for FragPipe explained intensity.",
 )
 def run_pipeline(
     input_path: Path,
@@ -85,51 +77,35 @@ def run_pipeline(
     n_ms2: int | None,
     tic_area: float | None,
 ) -> None:
-    """Run full QC analysis on an input dataset (Genomics/FragPipe/Spectronaut)."""
+    """Run full QC analysis on a proteomics dataset."""
     console.print(f"[bold indigo]🧬 Sample QC Pipeline v{__version__}[/bold indigo]")
     console.print(f"Loading input: [cyan]{input_path}[/cyan] (Format: [yellow]{input_format.upper()}[/yellow])")
 
     try:
         format_type = None if input_format == "auto" else input_format
-        
-        is_fragpipe_dir = False
+        results = None
+
         if input_path.is_dir():
-            if (input_path / "combined_protein.tsv").exists() or format_type == "fragpipe":
-                is_fragpipe_dir = True
-
-        if is_fragpipe_dir:
-            console.print(f"  ✓ Detected FragPipe search directory. Running advanced QC metrics...")
+            console.print("  ✓ Detected FragPipe project directory. Running FragPipe QC metrics...")
             results = generate_qc_metrics(input_path, n_ms2=n_ms2, tic_area=tic_area)
-            summary = {
-                "n_pass": 1,
-                "n_fail": 0,
-                "pass_rate": 1.0
-            }
-            results["summary"] = summary
-            results["n_samples"] = 1
+            if "summary" not in results:
+                results["summary"] = {"n_pass": 1, "n_fail": 0, "pass_rate": 1.0}
+            results["n_samples"] = results.get("n_samples", 1)
         else:
-            # 1. Parse sheet/matrix
             df = load_proteomics_data(input_path, format_type=format_type, sep=sep)
-            
-            # Check whether genomics or proteomics matrix was loaded
-            is_proteomics = "total_reads" not in df.columns
-            if is_proteomics:
-                console.print(f"  ✓ Successfully parsed Proteomics matrix: [green]{len(df)}[/green] proteins across [green]{len(df.columns)}[/green] samples.")
-            else:
-                console.print(f"  ✓ Successfully parsed Genomics sheet: [green]{len(df)}[/green] samples.")
-
-            # 2. Run analysis metrics
-            console.print("Running descriptive statistics, PCA clustering, and outlier detection...")
+            console.print(
+                f"  ✓ Successfully parsed Proteomics matrix: [green]{len(df)}[/green] proteins across [green]{len(df.columns)}[/green] runs."
+            )
+            console.print("Running proteomics QC metrics and run-level flagging...")
             results = run_all_metrics(df)
-            summary = results["summary"]
 
+        summary = results["summary"]
         console.print(
             f"  ✓ Process complete: [green]{summary['n_pass']} Passed[/green], "
             f"[red]{summary['n_fail']} Failed[/red] QC checks. "
-            f"({summary['pass_rate'] * 100:.1f}% rate)"
+            f"({summary['pass_rate'] * 100:.1f}% pass rate)"
         )
 
-        # 3. Save report files
         output_dir.mkdir(parents=True, exist_ok=True)
         formats_to_gen = ["json", "html", "text"] if fmt == "all" else [fmt]
 
@@ -139,8 +115,7 @@ def run_pipeline(
             generate_report(results, output_path=out_path, fmt=current_fmt)
             console.print(f"  ✓ Saved [bold]{current_fmt.upper()}[/bold] report to [yellow]{out_path}[/yellow]")
 
-        # Print standard text report directly to console stdout for immediate inspection
-        console.print("\n[bold]Summary Console Table Output:[/bold]")
+        console.print("\n[bold]Summary Console Output:[/bold]")
         text_summary = generate_report(results, fmt="text")
         print(text_summary)
 
@@ -170,7 +145,7 @@ def run_pipeline(
     help="Output report format to render.",
 )
 def render_saved(json_results: Path, output: Path, fmt: str) -> None:
-    """Render HTML or Text reports from previously saved QC JSON files."""
+    """Render HTML or text reports from previously saved QC JSON files."""
     console.print(f"[bold indigo]🧬 Sample QC Renderer[/bold indigo]")
     console.print(f"Loading results: [cyan]{json_results}[/cyan]")
 
@@ -180,7 +155,6 @@ def render_saved(json_results: Path, output: Path, fmt: str) -> None:
 
         generate_report(results, output_path=output, fmt=fmt)
         console.print(f"  ✓ Generated [bold]{fmt.upper()}[/bold] report at [green]{output}[/green]")
-
     except Exception as e:
         console.print(f"[bold red]Render Error:[/bold red] {e}", err=True)
         sys.exit(1)
@@ -188,7 +162,7 @@ def render_saved(json_results: Path, output: Path, fmt: str) -> None:
 
 @main.command("version")
 def print_version() -> None:
-    """Display software version and packaging information."""
+    """Display software version information."""
     console.print(f"🧬 sample-qc CLI tool version: [bold green]{__version__}[/bold green]")
 
 

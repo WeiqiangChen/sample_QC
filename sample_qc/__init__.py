@@ -1,35 +1,20 @@
-"""
-sample_qc — Quality Control for genomic/sequencing sample data.
+﻿"""
+sample_qc — Quality Control for proteomics sample data.
 """
 
 __version__ = "0.1.0"
 __author__ = "WeiQiang"
 
-from sample_qc.metrics import (
-    compute_basic_stats,
-    compute_missing_rate,
-    compute_outliers,
-    compute_duplication_rate,
-    compute_gc_stats,
-    compute_coverage_stats,
-    run_all_metrics,
-)
-from sample_qc.parser import parse_sample_sheet, validate_schema, load_proteomics_data
+from sample_qc.metrics import run_all_metrics
+from sample_qc.parser import load_proteomics_data
 from sample_qc.report import generate_report
+from sample_qc.cli import main
 
 __all__ = [
-    "compute_basic_stats",
-    "compute_missing_rate",
-    "compute_outliers",
-    "compute_duplication_rate",
-    "compute_gc_stats",
-    "compute_coverage_stats",
-    "run_all_metrics",
-    "parse_sample_sheet",
-    "validate_schema",
+    "main",
     "load_proteomics_data",
+    "run_all_metrics",
     "generate_report",
-    "run_qc",
 ]
 
 
@@ -39,21 +24,21 @@ def run_qc(
     format_type: str | None = None,
 ) -> dict:
     """
-    High-level convenience function: parse genomic/proteomics input and run all QC metrics.
+    High-level convenience function for proteomics QC.
 
     Parameters
     ----------
     input_path : str
-        Path to file or output directory.
-    sep : str
-        Column delimiter for sample sheet (if applicable).
-    format_type : {"fragpipe", "spectronaut", "genomics", None}
+        Path to a proteomics input file or FragPipe project directory.
+    sep : str | None
+        Optional delimiter for generic abundance matrices.
+    format_type : {"fragpipe", "spectronaut", "auto", None}
         Optional format override.
 
     Returns
     -------
     dict
-        QC results dictionary ready to be passed to ``generate_report``.
+        QC results dictionary ready for report generation.
     """
     df = load_proteomics_data(input_path, format_type=format_type, sep=sep)
     return run_all_metrics(df)
