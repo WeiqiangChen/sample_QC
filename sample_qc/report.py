@@ -637,6 +637,256 @@ PROTEOMICS_HTML_TEMPLATE = """<!DOCTYPE html>
             yaxis: { ...layoutConfig.yaxis, title: 'Log2 Abundance' },
             showlegend: false
         }, {responsive: true, displayModeBar: false});
+"""
+
+# ===========================================================================
+# FragPipe Advanced QC HTML Dashboard Template
+# ===========================================================================
+FRAGPIPE_HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧬 FragPipe Advanced Quality Control Dashboard</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(17, 24, 39, 0.75);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --primary: #818cf8;
+            --primary-glow: rgba(129, 140, 248, 0.2);
+            --success: #34d399;
+            --success-glow: rgba(52, 211, 153, 0.2);
+            --warning: #fbbf24;
+            --danger: #f87171;
+            --font-main: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: var(--font-main);
+            line-height: 1.5;
+            padding: 2rem;
+            min-height: 100vh;
+            background-image: radial-gradient(circle at 10% 20%, rgba(129, 140, 248, 0.06) 0%, transparent 40%),
+                              radial-gradient(circle at 90% 80%, rgba(52, 211, 153, 0.05) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+        .container { max-width: 1450px; margin: 0 auto; }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--card-border);
+        }
+        .brand h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #cbd5e1 0%, #818cf8 50%, #4f46e5 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .brand p { color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem; }
+        .timestamp {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            background: var(--card-border);
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            border: 1px solid var(--card-border);
+        }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+        .stat-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-card:hover { transform: translateY(-4px); border-color: var(--primary); box-shadow: 0 10px 20px -10px var(--primary-glow); }
+        .stat-card::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: var(--primary); }
+        .stat-card.success::before { background: var(--success); }
+        .stat-card.warning::before { background: var(--warning); }
+        .stat-card.danger::before { background: var(--danger); }
+        .stat-label { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.5rem; }
+        .stat-value { font-size: 2.2rem; font-weight: 800; color: var(--text-main); font-family: var(--font-mono); }
+        .stat-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.3rem; }
+        
+        .layout-main { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
+        @media (max-width: 1024px) { .layout-main { grid-template-columns: 1fr; } }
+        
+        .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 1.5rem; backdrop-filter: blur(12px); margin-bottom: 1.5rem; }
+        .card-title { font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid var(--card-border); padding-bottom: 0.75rem; }
+        .chart-container { width: 100%; height: 380px; border-radius: 8px; overflow: hidden; }
+        
+        .metrics-list { display: flex; flex-direction: column; gap: 0.85rem; }
+        .metric-row { display: flex; justify-content: space-between; align-items: center; padding-bottom: 0.6rem; border-bottom: 1px solid rgba(255,255,255,0.03); }
+        .metric-name { font-size: 0.92rem; color: var(--text-main); font-weight: 500; }
+        .metric-val { font-family: var(--font-mono); font-size: 0.95rem; color: var(--primary); font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="brand">
+                <h1>🧬 FragPipe QC Dashboard</h1>
+                <p>Advanced Quality Control metrics & statistics for DDA MS proteomics searches</p>
+            </div>
+            <div class="timestamp" id="report-time">Generated: --</div>
+        </header>
+
+        <!-- KPI Grid -->
+        <div class="summary-grid">
+            <div class="stat-card">
+                <div class="stat-label">Identified Proteins</div>
+                <div class="stat-value" id="stat-prots">0</div>
+                <div class="stat-sub" id="sub-prots">Contaminants: 0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Identified Peptides</div>
+                <div class="stat-value" id="stat-peps">0</div>
+                <div class="stat-sub" id="sub-peps">Contaminant Peps: 0</div>
+            </div>
+            <div class="stat-card success">
+                <div class="stat-label">Total PSMs</div>
+                <div class="stat-value" id="stat-psms">0</div>
+                <div class="stat-sub" id="sub-psms">ID Rate: 0%</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-label">Missed Cleavages</div>
+                <div class="stat-value" id="stat-missed">0%</div>
+                <div class="stat-sub" id="sub-missed">Expl. Intensity: 0%</div>
+            </div>
+        </div>
+
+        <div class="layout-main">
+            <!-- Left Side: Modification & Dev charts -->
+            <div class="chart-column">
+                <div class="card">
+                    <div class="card-title">📈 Peptide Mass Deviations (ppm)</div>
+                    <div class="chart-container" id="plotly-mass-dev"></div>
+                </div>
+                <div class="card">
+                    <div class="card-title">🔬 Assigned Modifications Breakdown</div>
+                    <div class="chart-container" id="plotly-mods"></div>
+                </div>
+            </div>
+
+            <!-- Right Side: Detailed Metrics Table -->
+            <div class="details-column">
+                <div class="card">
+                    <div class="card-title">📋 Comprehensive QC Summary</div>
+                    <div class="metrics-list" id="metrics-table">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const qcData = {{DATA_PLACEHOLDER}};
+        
+        document.getElementById('report-time').innerText = `Generated: ${new Date().toLocaleString()}`;
+        document.getElementById('stat-prots').innerText = (qcData.nProts || 0).toLocaleString();
+        document.getElementById('sub-prots').innerText = `Contaminants: ${qcData.nContaProts || 0} (${((qcData.nContaProts || 0) / (qcData.nProts || 1) * 100).toFixed(2)}%)`;
+        
+        document.getElementById('stat-peps').innerText = (qcData.nPeps || 0).toLocaleString();
+        document.getElementById('sub-peps').innerText = qcData.nContaPeps ? `Contaminants: ${qcData.nContaPeps.toLocaleString()}` : 'Contaminant data N/A';
+        
+        document.getElementById('stat-psms').innerText = (qcData.nPsms || 0).toLocaleString();
+        document.getElementById('sub-psms').innerText = qcData.idRate ? `ID Rate: ${qcData.idRate}%` : 'ID Rate: N/A';
+        
+        document.getElementById('stat-missed').innerText = qcData.missCl ? `${qcData.missCl}%` : 'N/A';
+        document.getElementById('sub-missed').innerText = qcData.explIons ? `Explained Intensity: ${qcData.explIons}%` : 'Explained Intensity: N/A';
+
+        // Populate Comprehensive QC Summary Table
+        const metricsTable = document.getElementById('metrics-table');
+        const rows = [
+            { name: "Total Proteins", val: qcData.nProts },
+            { name: "Contaminant Proteins", val: qcData.nContaProts },
+            { name: "Total Peptides", val: qcData.nPeps },
+            { name: "Contaminant Peptides", val: qcData.nContaPeps },
+            { name: "Total PSMs", val: qcData.nPsms },
+            { name: "PSM ID Rate", val: qcData.idRate ? `${qcData.idRate}%` : 'N/A' },
+            { name: "Missed Cleavage Rate", val: qcData.missCl ? `${qcData.missCl}%` : 'N/A' },
+            { name: "Total Peptide Intensity", val: qcData.totPepI ? qcData.totPepI.toExponential(3) : 'N/A' },
+            { name: "Contaminant Peptide Intensity", val: qcData.contaPepI ? qcData.contaPepI.toExponential(3) : 'N/A' },
+            { name: "Explained Intensity Ratio", val: qcData.explIons ? `${qcData.explIons}%` : 'N/A' }
+        ];
+        
+        rows.forEach(r => {
+            if (r.val !== undefined && r.val !== null) {
+                const div = document.createElement('div');
+                div.className = 'metric-row';
+                div.innerHTML = `<span class="metric-name">${r.name}</span><span class="metric-val">${r.val}</span>`;
+                metricsTable.appendChild(div);
+            }
+        });
+
+        // Common layout config
+        const layoutConfig = {
+            paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { color: '#f3f4f6', family: 'Inter, sans-serif' },
+            xaxis: { gridcolor: 'rgba(255,255,255,0.05)', zeroline: false },
+            yaxis: { gridcolor: 'rgba(255,255,255,0.05)', zeroline: false }
+        };
+
+        // 1. Mass Deviation box plot/summary
+        if (qcData.medMassDev !== undefined) {
+            const devData = [{
+                x: ['q05', 'q10', 'q25', 'median', 'q75', 'q90', 'q95'],
+                y: [qcData.q05MassDev, qcData.q10MassDev, qcData.q25MassDev, qcData.medMassDev, qcData.q75MassDev, qcData.q90MassDev, qcData.q95MassDev],
+                type: 'bar',
+                marker: {
+                    color: '#818cf8', opacity: 0.85
+                }
+            }];
+            Plotly.newPlot('plotly-mass-dev', devData, {
+                ...layoutConfig,
+                title: 'Mass Deviation distribution quantiles (ppm)',
+                xaxis: { ...layoutConfig.xaxis, title: 'Quantile' },
+                yaxis: { ...layoutConfig.yaxis, title: 'Mass Dev (ppm)' }
+            }, {responsive: true, displayModeBar: false});
+        }
+
+        // 2. Modifications Breakdown
+        const modKeys = ['Oxidation (M)', 'Carbamidomethyl', 'Methylthio', 'Carbamyl (K)', 'Carbamyl (N-term)'];
+        const modVals = [qcData.oxiPsms || 0, qcData.carbamidoPsms || 0, qcData.meththPsms || 0, qcData.carbamylKpsms || 0, qcData.carbamylNtPsms || 0];
+        
+        const modsTrace = {
+            x: modKeys,
+            y: modVals,
+            type: 'bar',
+            marker: {
+                color: '#34d399', opacity: 0.85
+            }
+        };
+        Plotly.newPlot('plotly-mods', [modsTrace], {
+            ...layoutConfig,
+            title: 'Assigned Modifications counts per PSM',
+            yaxis: { ...layoutConfig.yaxis, title: 'PSM Count' }
+        }, {responsive: true, displayModeBar: false});
     </script>
 </body>
 </html>
@@ -655,8 +905,12 @@ def generate_html_report(results: dict[str, Any], output_path: Path) -> None:
     data_json_str = json.dumps(results, indent=2, ensure_ascii=False)
     
     # Choose template based on data domain
-    is_proteomics = results.get("is_proteomics", False)
-    template = PROTEOMICS_HTML_TEMPLATE if is_proteomics else GENOMICS_HTML_TEMPLATE
+    if results.get("is_fragpipe_qc", False):
+        template = FRAGPIPE_HTML_TEMPLATE
+    elif results.get("is_proteomics", False):
+        template = PROTEOMICS_HTML_TEMPLATE
+    else:
+        template = GENOMICS_HTML_TEMPLATE
     
     html_content = template.replace("{{DATA_PLACEHOLDER}}", data_json_str)
 
@@ -667,6 +921,39 @@ def generate_html_report(results: dict[str, Any], output_path: Path) -> None:
 
 def generate_text_report(results: dict[str, Any]) -> str:
     """Return a plain text table summary suitable for console stdout."""
+    if results.get("is_fragpipe_qc", False):
+        report = []
+        report.append("=" * 65)
+        report.append("🧬 FRAGPIPE PROTEOMICS QUALITY CONTROL REPORT SUMMARY")
+        report.append("=" * 65)
+        report.append(f"Total Identified Proteins : {results.get('nProts', 'N/A')}")
+        report.append(f"Contaminant Proteins       : {results.get('nContaProts', 'N/A')}")
+        report.append(f"Total Identified Peptides : {results.get('nPeps', 'N/A')}")
+        report.append(f"Total PSMs                : {results.get('nPsms', 'N/A')}")
+        report.append(f"PSM ID Rate               : {results.get('idRate', 'N/A')}%")
+        report.append(f"Missed Cleavage Rate      : {results.get('missCl', 'N/A')}%")
+        if 'totPepI' in results:
+            report.append(f"Total Peptide Intensity   : {results.get('totPepI', 'N/A'):.2e}")
+        if 'explIons' in results:
+            report.append(f"Explained Ions (%)        : {results.get('explIons', 'N/A')}%")
+        report.append("-" * 65)
+        
+        report.append("\n📋 ASSIGNED MODIFICATIONS BREAKDOWN (PSMs):")
+        report.append(f"  • Oxidation (Met) [oxiPsms]       : {results.get('oxiPsms', 0)}")
+        report.append(f"  • Carbamidomethyl [carbamidoPsms]  : {results.get('carbamidoPsms', 0)}")
+        report.append(f"  • Methylthio [meththPsms]          : {results.get('meththPsms', 0)}")
+        report.append(f"  • Carbamyl (K) [carbamylKpsms]     : {results.get('carbamylKpsms', 0)}")
+        report.append(f"  • Carbamyl (N-term) [carbamylNt]   : {results.get('carbamylNtPsms', 0)}")
+        report.append("-" * 65)
+
+        if 'medMassDev' in results:
+            report.append("\n📈 PEPTIDE MASS DEVIATIONS (PPM):")
+            report.append(f"  • Median Mass Dev                 : {results.get('medMassDev', 'N/A')} ppm")
+            report.append(f"  • 25th - 75th Quantiles           : {results.get('q25MassDev', 'N/A')} to {results.get('q75MassDev', 'N/A')} ppm")
+            report.append(f"  • 5th - 95th Quantiles             : {results.get('q05MassDev', 'N/A')} to {results.get('q95MassDev', 'N/A')} ppm")
+            report.append("=" * 65)
+        return "\n".join(report)
+
     summary = results["summary"]
     pass_rate = summary["pass_rate"] * 100
     is_proteomics = results.get("is_proteomics", False)

@@ -12,7 +12,7 @@ import click
 from rich.console import Console
 
 from sample_qc import __version__
-from sample_qc.metrics import run_all_metrics
+from sample_qc.metrics import run_all_metrics, generate_qc_metrics
 from sample_qc.parser import load_proteomics_data
 from sample_qc.report import generate_report
 
@@ -64,33 +64,64 @@ def main() -> None:
     default=None,
     help="Delimiter characters. Auto-inferred if omitted.",
 )
+@click.option(
+    "--n-ms2",
+    type=int,
+    default=None,
+    help="Number of MS2 spectra for ID rate calculation.",
+)
+@click.option(
+    "--tic-area",
+    type=float,
+    default=None,
+    help="Total Ion Chromatogram (TIC) area for explained intensity calculation.",
+)
 def run_pipeline(
     input_path: Path,
     output_dir: Path,
     fmt: str,
     input_format: str,
     sep: str | None,
+    n_ms2: int | None,
+    tic_area: float | None,
 ) -> None:
     """Run full QC analysis on an input dataset (Genomics/FragPipe/Spectronaut)."""
     console.print(f"[bold indigo]🧬 Sample QC Pipeline v{__version__}[/bold indigo]")
     console.print(f"Loading input: [cyan]{input_path}[/cyan] (Format: [yellow]{input_format.upper()}[/yellow])")
 
     try:
-        # 1. Parse sheet/matrix
         format_type = None if input_format == "auto" else input_format
-        df = load_proteomics_data(input_path, format_type=format_type, sep=sep)
         
-        # Check whether genomics or proteomics matrix was loaded
-        is_proteomics = "total_reads" not in df.columns
-        if is_proteomics:
-            console.print(f"  ✓ Successfully parsed Proteomics matrix: [green]{len(df)}[/green] proteins across [green]{len(df.columns)}[/green] samples.")
-        else:
-            console.print(f"  ✓ Successfully parsed Genomics sheet: [green]{len(df)}[/green] samples.")
+        is_fragpipe_dir = False
+        if input_path.is_dir():
+            if (input_path / "combined_protein.tsv").exists() or format_type == "fragpipe":
+                is_fragpipe_dir = True
 
-        # 2. Run analysis metrics
-        console.print("Running descriptive statistics, PCA clustering, and outlier detection...")
-        results = run_all_metrics(df)
-        summary = results["summary"]
+        if is_fragpipe_dir:
+            console.print(f"  ✓ Detected FragPipe search directory. Running advanced QC metrics...")
+            results = generate_qc_metrics(input_path, n_ms2=n_ms2, tic_area=tic_area)
+            summary = {
+                "n_pass": 1,
+                "n_fail": 0,
+                "pass_rate": 1.0
+            }
+            results["summary"] = summary
+            results["n_samples"] = 1
+        else:
+            # 1. Parse sheet/matrix
+            df = load_proteomics_data(input_path, format_type=format_type, sep=sep)
+            
+            # Check whether genomics or proteomics matrix was loaded
+            is_proteomics = "total_reads" not in df.columns
+            if is_proteomics:
+                console.print(f"  ✓ Successfully parsed Proteomics matrix: [green]{len(df)}[/green] proteins across [green]{len(df.columns)}[/green] samples.")
+            else:
+                console.print(f"  ✓ Successfully parsed Genomics sheet: [green]{len(df)}[/green] samples.")
+
+            # 2. Run analysis metrics
+            console.print("Running descriptive statistics, PCA clustering, and outlier detection...")
+            results = run_all_metrics(df)
+            summary = results["summary"]
 
         console.print(
             f"  ✓ Process complete: [green]{summary['n_pass']} Passed[/green], "

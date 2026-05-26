@@ -107,3 +107,19 @@ def test_run_proteomics_metrics():
     assert len(res["correlation"]["samples"]) == 4
     assert len(res["correlation"]["grid"]) == 4
     assert len(res["correlation"]["grid"][0]) == 4
+
+
+def test_generate_qc_metrics():
+    from pathlib import Path
+    from sample_qc.metrics import generate_qc_metrics
+    
+    job_dir = Path(__file__).parent.parent / "data" / "FragPipe_result1"
+    res = generate_qc_metrics(job_dir, n_ms2=250000, tic_area=1e9)
+    
+    assert res["is_proteomics"] is True
+    assert res["is_fragpipe_qc"] is True
+    assert res["nProts"] > 0
+    assert res["nPeps"] > 0
+    assert res["nPsms"] > 0
+    assert "medMassDev" in res
+    assert "oxiPsms" in res

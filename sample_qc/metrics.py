@@ -7,6 +7,8 @@ suitable for JSON serialisation and report generation.
 
 from __future__ import annotations
 
+import os
+import re
 import logging
 from typing import Any
 
@@ -38,6 +40,110 @@ OUTLIER_IQR_FACTOR = 1.5
 # ---------------------------------------------------------------------------
 # Proteomics Metrics Implementation
 # ---------------------------------------------------------------------------
+
+def generate_qc_metrics(job_dir: str | os.PathLike, n_ms2: int | None = None, tic_area: float | None = None) -> dict[str, Any]:
+    metrics = {
+        "is_proteomics": True,
+        "is_fragpipe_qc": True,
+    }
+
+    # 1. Process Protein-Level Data
+    prot_path = os.path.join(job_dir, "combined_protein.tsv")
+    if os.path.exists(prot_path):
+        prots = pd.read_csv(prot_path, sep="\t")
+        metrics["nProts"] = len(prots)
+        metrics["nContaProts"] = prots["Protein ID"].str.contains("cont_").sum()
+
+    # 2. Process Peptide-Level Data
+    pep_path = os.path.join(job_dir, "combined_peptide.tsv")
+    if os.path.exists(pep_path):
+        peps = pd.read_csv(pep_path, sep="\t")
+        metrics["nPeps"] = len(peps)
+
+        if pd.notna(tic_area) and tic_area > 0:
+            # Handle possible missing intensity columns safely
+            intensity_col = (
+                "s_1 Intensity" if "s_1 Intensity" in peps.columns else peps.columns[0]
+            )
+            spec_count_col = (
+                "s_1 Spectral Count"
+                if "s_1 Spectral Count" in peps.columns
+                else peps.columns[0]
+            )
+
+            tot_pep_i = peps[intensity_col].sum(skipna=True)
+            metrics["totPepI"] = tot_pep_i
+            metrics["explIons"] = round(100 * tot_pep_i / tic_area, 2)
+
+            is_contam = peps["Protein ID"].str.contains("cont_", na=False)
+            metrics["contaPepI"] = peps.loc[is_contam, intensity_col].sum(
+                skipna=True
+            )
+            metrics["contaPepSpecCt"] = peps.loc[is_contam, spec_count_col].sum(
+                skipna=True
+            )
+            metrics["nContaPeps"] = is_contam.sum()
+
+    # 3. Process PSM-Level Data
+    psm_path = os.path.join(job_dir, "s_1", "psm.tsv")
+    if not os.path.exists(psm_path):
+        # Fallback to search dynamically for any psm.tsv in subdirectories
+        for root, dirs, files in os.walk(job_dir):
+            if "psm.tsv" in files:
+                psm_path = os.path.join(root, "psm.tsv")
+                break
+
+    if os.path.exists(psm_path):
+        psms = pd.read_csv(psm_path, sep="\t")
+
+        metrics["nPsms"] = len(psms)
+        metrics["idRate"] = (
+            round(100 * len(psms) / n_ms2, 2) if n_ms2 else np.nan
+        )
+        metrics["missCl"] = round(
+            100 * (psms["Number of Missed Cleavages"] > 0).mean(), 2
+        )
+
+        # Modification metrics (string matching shifts)
+        mods = psms["Assigned Modifications"].fillna("")
+        metrics["oxiPsms"] = mods.str.contains(r"\(15\.9949\)", regex=True).sum()
+        metrics["alkyCandPsms"] = (
+            psms["Peptide"].fillna("").str.contains("C", fixed=True).sum()
+        )
+
+        carbamido_psms = mods.str.contains(r"\(57\.0215\)", regex=True)
+        methth_psms = mods.str.contains(r"\(45\.9877\)", regex=True)
+
+        metrics["carbamidoPsms"] = carbamido_psms.sum()
+        metrics["meththPsms"] = methth_psms.sum()
+        metrics["CarbamMeththPsms"] = (carbamido_psms & methth_psms).sum()
+
+        metrics["carbamylKpsms"] = mods.str.contains(
+            r"K\(43\.0058\)", regex=True
+        ).sum()
+        metrics["carbamylNtPsms"] = mods.str.contains(
+            r"N-term\(43\.0058\)", regex=True
+        ).sum()
+        metrics["contaPsms"] = psms["Protein ID"].str.contains("cont_").sum()
+
+        # Mass deviation calculations
+        within_0c5 = psms["Delta Mass"].abs() < 0.5
+        if within_0c5.any():
+            dms = (
+                1e6
+                * psms.loc[within_0c5, "Delta Mass"]
+                / psms.loc[within_0c5, "Calculated Peptide Mass"]
+            )
+
+            metrics["medMassDev"] = round(dms.median(), 2)
+            metrics["q25MassDev"] = round(dms.quantile(0.25), 2)
+            metrics["q75MassDev"] = round(dms.quantile(0.75), 2)
+            metrics["q05MassDev"] = round(dms.quantile(0.05), 2)
+            metrics["q10MassDev"] = round(dms.quantile(0.10), 2)
+            metrics["q90MassDev"] = round(dms.quantile(0.90), 2)
+            metrics["q95MassDev"] = round(dms.quantile(0.95), 2)
+
+    return metrics
 
 def run_proteomics_metrics(df: pd.DataFrame) -> dict[str, Any]:
     """
